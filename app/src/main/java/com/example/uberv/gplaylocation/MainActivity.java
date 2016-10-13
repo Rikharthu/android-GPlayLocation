@@ -1,5 +1,7 @@
 package com.example.uberv.gplaylocation;
 
+import android.content.Intent;
+import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.support.annotation.NonNull;
@@ -17,7 +19,15 @@ import android.widget.Toast;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.PendingResult;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.common.api.Status;
+import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.LocationSettingsRequest;
+import com.google.android.gms.location.LocationSettingsResult;
+import com.google.android.gms.location.LocationSettingsStates;
+import com.google.android.gms.location.LocationSettingsStatusCodes;
 
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
     private static final String TAG = MainActivity.class.getSimpleName();
@@ -26,6 +36,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     public static final int LOCATION_PERMISSION_REQUEST = 4008;
     private GoogleApiClient mGoogleApiClient;
     private Location mLastLocation;
+    private LocationRequest mLocationRequest;
 
     private RelativeLayout mRootLayout;
     private TextView mLatitudeText, mLongtitudeText;
@@ -89,13 +100,71 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 //        }
     }
 
-    // --- GoogleApiClient callbacks ---
-    @Override
-    public void onConnected(@Nullable Bundle bundle) {
-        Log.d(TAG, "onConnected()");
-        Toast.makeText(this, "Sucessfully connected to the Google Play Services", Toast.LENGTH_SHORT).show();
+    protected void createLocationRequest() {
+        mLocationRequest = new LocationRequest();
+        mLocationRequest.setInterval(10000);
+        mLocationRequest.setFastestInterval(5000);
+        mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
 
-        getLastLocation();
+        // get current location settings
+        LocationSettingsRequest.Builder builder = new LocationSettingsRequest.Builder()
+                .addLocationRequest(mLocationRequest);
+
+        // Check whether the location settings are satisfied
+        PendingResult<LocationSettingsResult> result =
+                LocationServices.SettingsApi.checkLocationSettings(mGoogleApiClient,
+                        builder.build());
+
+        // TODO extract as implemented interface
+        result.setResultCallback(new ResultCallback<LocationSettingsResult>() {
+            @Override
+            public void onResult(@NonNull LocationSettingsResult result) {
+                final Status status = result.getStatus();
+                final LocationSettingsStates locationSettingsStates= result.getLocationSettingsStates();
+                switch (status.getStatusCode()) {
+                    case LocationSettingsStatusCodes.SUCCESS:
+                        // All location settings are satisfied. The client can
+                        // initialize location requests here.
+                        Log.d(TAG,"Success!");
+                        // TODO
+
+                        break;
+                    case LocationSettingsStatusCodes.RESOLUTION_REQUIRED:
+                        // Location settings are not satisfied, but this can be fixed
+                        // by showing the user a dialog.
+                        try {
+                            // Show the dialog by calling startResolutionForResult(),
+                            // and check the result in onActivityResult().
+                            status.startResolutionForResult(
+                                    MainActivity.this,
+                                    2008);
+                            Log.d(TAG,"Requesting resolution.");
+                        } catch (IntentSender.SendIntentException e) {
+                            // Ignore the error.
+                        }
+                        break;
+                    case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
+                        // Location settings are not satisfied. However, we have no way
+                        // to fix the settings so we won't show the dialog.
+
+                        break;
+                }
+            }
+        });
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        // fom gps dialog. -1 = yes, 0 = no
+        Log.d(TAG,""+requestCode+", "+resultCode);
+
+        if(requestCode==2008){
+            // startResolutionForResult - turn on GPS/WIFI
+            if(resultCode==-1){
+                Log.d(TAG,"Settings fixed");
+//                getLastLocation();
+            }
+        }
     }
 
     @Override
@@ -118,6 +187,15 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 return;
             }
         }
+    }
+
+    // --- GoogleApiClient callbacks ---
+    @Override
+    public void onConnected(@Nullable Bundle bundle) {
+        Log.d(TAG, "onConnected()");
+        Toast.makeText(this, "Sucessfully connected to the Google Play Services", Toast.LENGTH_SHORT).show();
+
+        getLastLocation();
     }
 
     private void getLastLocation() {
@@ -159,6 +237,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             mLatitudeText.setText(String.valueOf(lat));
             mLongtitudeText.setText(String.valueOf(lng));
         }
+
+        // subscribe for further updates
+        createLocationRequest();
     }
 
     @Override
